@@ -1,31 +1,30 @@
-use std::{mem, sync::Arc};
+use std::{mem, ops::ControlFlow};
 
-use crate::{basic::Basic, number::{ZERO, ONE}, symbol::Symbol, undefined::{UNDEFINED, Undefined}, visitor::Visitor};
+use crate::{expr::Expr, number::{ZERO, ONE}, symbol::Symbol, undefined::{UNDEFINED, Undefined}, visitor::Visitor};
 
 use super::{Plus, Times};
 
 
 pub struct Derivative {
-    wrt: Arc<Symbol>,
-    expr: Arc<dyn Basic>,
+    wrt: Expr<Symbol>,
+    expr: Expr,
 }
 
 impl Derivative {
-    pub fn new(expr: Arc<dyn Basic>, wrt: Arc<Symbol>) -> Self {
+    pub fn new(expr: Expr, wrt: Expr<Symbol>) -> Self {
         Self { wrt, expr }
     }
 
     /// Temporary
-    pub fn eval(&self) -> Arc<dyn Basic> {
+    pub fn eval(&self) -> Expr {
         let mut visitor = DerivVisitor {
             wrt: &*self.wrt,
             res: UNDEFINED.clone(),
-            invalid: false,
         };
 
-        self.expr.visit(&mut visitor);
+        let control_flow = self.expr.visit(&mut visitor);
 
-        if visitor.invalid {
+        if let ControlFlow::Break(_) = control_flow {
             UNDEFINED.clone()
         } else {
             visitor.res
@@ -35,59 +34,62 @@ impl Derivative {
 
 pub struct DerivVisitor<'a> {
     wrt: &'a Symbol,
-    res: Arc<dyn Basic>,
-    invalid: bool,
+    res: Expr,
 }
 
 impl DerivVisitor<'_> {
-    fn take(&mut self) -> Arc<dyn Basic> {
+    fn take(&mut self) -> Expr {
         mem::replace(&mut self.res, UNDEFINED.clone())
     }
 }
 
 impl Visitor for DerivVisitor<'_> {
-    fn visit_undefined(&mut self, _undef: &Undefined) {
-        self.invalid = true;
+    fn visit_undefined(&mut self, _undef: &Undefined) -> ControlFlow<()> {
         self.res = UNDEFINED.clone();
+        ControlFlow::Break(())
     }
 
-    fn visit_number(&mut self, _n: &crate::Number) {
-        self.res = ZERO.clone()
+    fn visit_number(&mut self, _n: &crate::Number) -> ControlFlow<()> {
+        self.res = ZERO.clone();
+        ControlFlow::Continue(())
     }
 
-    fn visit_symbol(&mut self, sym: &Symbol) {
+    fn visit_symbol(&mut self, sym: &Symbol) -> ControlFlow<()> {
         if sym == self.wrt {
             self.res = ONE.clone();
         } else {
             self.res = ZERO.clone();
         }
+        ControlFlow::Continue(())
     }
 
-    fn visit_plus(&mut self, plus: &Plus) {
+    fn visit_plus(&mut self, plus: &Plus) -> ControlFlow<()> {
         let mut terms = vec![];
         for term in plus.terms() {
-            term.visit(self);
+            term.visit(self)?;
             terms.push(self.take());
         }
 
-        self.res = Arc::new(Plus::new(terms));
+        self.res = Expr::new(Plus::new(terms));
+        ControlFlow::Continue(())
     }
 
-    fn visit_times(&mut self, times: &Times) {
-        let mut plus_terms: Vec<Arc<dyn Basic>> = vec![];
+    fn visit_times(&mut self, times: &Times) -> ControlFlow<()> {
+        let mut plus_terms: Vec<Expr> = vec![];
         for i in 0..times.terms().len() {
             let mut times_terms = vec![];
             for (j, term) in times.terms().iter().enumerate() {
                 if i == j {
-                    term.visit(self);
+                    term.visit(self)?;
                     times_terms.push(self.take());
                 } else {
                     times_terms.push(term.clone());
                 }
             }
-            plus_terms.push(Arc::new(Times::new(times_terms)));
+            plus_terms.push(Expr::new(Times::new(times_terms)));
         }
 
-        self.res = Arc::new(Plus::new(plus_terms));
+        self.res = Expr::new(Plus::new(plus_terms));
+        ControlFlow::Continue(())
     }
 }

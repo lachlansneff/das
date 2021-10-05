@@ -1,15 +1,49 @@
-use std::{any::Any, cmp::Ordering, fmt::Debug};
+use std::{any::{Any, TypeId}, cmp::Ordering, fmt::Debug, ops::{Add, ControlFlow}};
 
-use crate::{symbol::Symbol, visitor::Visitor};
+use crate::{expr::Expr, functions, visitor::Visitor};
 
 pub trait Basic: Send + Sync + Debug + Any {
-    fn contains_symbol(&self, sym: &Symbol) -> bool;
-    fn visit(&self, visitor: &mut dyn Visitor);
+    fn visit(&self, visitor: &mut dyn Visitor) -> ControlFlow<()>;
     fn eq(&self, other: &dyn Basic) -> bool;
     /// In implementations of this, return `None` when
     /// the types do not match.
     fn cmp(&self, other: &dyn Basic) -> Option<Ordering>;
-    fn as_any(&self) -> &dyn Any;
+}
+
+impl dyn Basic {
+    pub fn is<T: Basic>(&self) -> bool {
+        self.type_id() == TypeId::of::<T>()
+    }
+
+    pub fn downcast<T: Basic>(&self) -> Option<&T> {
+        if self.is::<T>() {
+            unsafe {
+                Some(&*(self as *const dyn Basic as *const T))
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl Expr {
+    pub fn downcast_expr<'a, T: Basic>(&'a self) -> Result<Expr<T>, &'a Expr> {
+        if self.is::<T>() {
+            unsafe {
+                Ok(Expr::clone(&*(self as *const Expr as *const Expr<T>)))
+            }
+        } else {
+            Err(self)
+        }
+    }
+}
+
+impl Add<Expr> for Expr {
+    type Output = Expr;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        functions::plus(&self, &rhs)
+    }
 }
 
 impl PartialEq for dyn Basic {
@@ -29,7 +63,7 @@ impl PartialOrd for dyn Basic {
 impl Ord for dyn Basic {
     fn cmp(&self, other: &Self) -> Ordering {
         <Self as Basic>::cmp(self, other).unwrap_or_else(|| {
-            self.as_any().type_id().cmp(&other.as_any().type_id())
+            self.type_id().cmp(&other.type_id())
         })
     }
 }
