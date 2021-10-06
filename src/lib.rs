@@ -1,4 +1,4 @@
-#![feature(unsize, coerce_unsized, dispatch_from_dyn)]
+#![feature(unsize, coerce_unsized, dispatch_from_dyn, arbitrary_self_types)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod basic;
@@ -10,6 +10,11 @@ mod functions;
 mod visitor;
 mod undefined;
 mod expr;
+// mod simplify;
+mod eval_symbolic;
+mod canonicalize;
+mod convert;
+// mod simplify;
 // mod units;
 // mod expr;
 
@@ -17,20 +22,17 @@ pub use self::number::{Number, ZERO, ONE, MINUS_ONE};
 
 #[cfg(test)]
 mod tests {
-    use crate::{functions::Derivative, symbol::Symbol};
-
-    use super::*;
-
+    use crate::{convert::{Convert, LaTex}, eval_symbolic::symbolic_eval, functions::derivative, symbol::sym};
+    
     #[test]
     fn it_works() {
-        let two = ONE.clone() + ONE.clone();
-        println!("two: {:?}", two);
+        let x = sym("x");
 
-        let x = Symbol::new("x");
-        let two_plus_x = two + x.clone();
-        println!("two_plus_x: {:?}", two_plus_x);
+        let a = x.clone() * x.clone() * 2 + 3.5;
+        let a_prime = derivative(a.clone(), x);
 
-        let d_two_plus_x = Derivative::new(two_plus_x, x).eval();
-        println!("d_two_plus_x: {:?}", d_two_plus_x);
+        println!("{}", LaTex::convert_to_string(symbolic_eval(a_prime)));
+
+        println!("{}", LaTex::convert_to_string(a));
     }
 }

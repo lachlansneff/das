@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, ops::ControlFlow};
 
-use crate::{Number, basic::Basic, expr::Expr, visitor::Visitor};
+use crate::{Number, basic::Basic, expr::{Expr, ExprRef}, visitor::Visitor};
 
 
 
@@ -30,17 +30,19 @@ impl Plus {
     }
 }
 
-pub fn plus(lhs: &Expr, rhs: &Expr) -> Expr {
-    match (lhs.downcast_expr::<Plus>(), rhs.downcast_expr::<Plus>()) {
-        (Ok(mut plus_rhs), Ok(plus_lhs)) => {
+pub fn plus(lhs: ExprRef, rhs: ExprRef) -> Expr {
+    match (lhs.downcast_exprref::<Plus>(), rhs.downcast_exprref::<Plus>()) {
+        (Ok(plus_rhs), Ok(plus_lhs)) => {
+            let mut plus_rhs = plus_rhs.into_expr();
             let mutable_plus = Expr::make_mut(&mut plus_rhs);
             mutable_plus.extend(plus_lhs.terms().iter().cloned());
             return plus_rhs;
         },
-        (Ok(mut plus), Err(other))
-        | (Err(other), Ok(mut plus)) => {
+        (Ok(plus), Err(other))
+        | (Err(other), Ok(plus)) => {
+            let mut plus = plus.into_expr();
             let mutable_plus = Expr::make_mut(&mut plus);
-            mutable_plus.extend([other.clone()]);
+            mutable_plus.extend([other.into_expr()]);
             return plus;
         }
         _ => {},
@@ -49,12 +51,12 @@ pub fn plus(lhs: &Expr, rhs: &Expr) -> Expr {
     if let (Some(lhs), Some(rhs)) = (lhs.downcast::<Number>(),  rhs.downcast::<Number>()) {
         Expr::new(lhs + rhs)
     } else {
-        Expr::new(Plus::new([lhs.clone(), rhs.clone()]))
+        Expr::new(Plus::new([lhs.into_expr(), rhs.into_expr()]))
     }
 }
 
 impl Basic for Plus {
-    fn visit(&self, visitor: &mut dyn Visitor) -> ControlFlow<()> {
+    fn visit(self: ExprRef<Self>, visitor: &mut dyn Visitor) -> ControlFlow<()> {
         visitor.visit_plus(self)
     }
 

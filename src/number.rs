@@ -1,13 +1,13 @@
-use std::ops::{self, ControlFlow};
+use std::{fmt, ops::{self, ControlFlow}};
 
 use num::{BigInt, BigRational, One, Signed, Zero};
 
-use crate::{basic::Basic, expr::Expr, visitor::Visitor};
+use crate::{basic::Basic, expr::{Expr, ExprRef}, undefined::UNDEFINED, visitor::Visitor};
 
 lazy_static::lazy_static! {
-    pub static ref ZERO: Expr = Expr::new(Number::Integer(BigInt::zero()));
-    pub static ref ONE: Expr = Expr::new(Number::Integer(BigInt::one()));
-    pub static ref MINUS_ONE: Expr = Expr::new(Number::Integer(-BigInt::one()));
+    pub static ref ZERO: Expr<Number> = Expr::new(Number::Integer(BigInt::zero()));
+    pub static ref ONE: Expr<Number> = Expr::new(Number::Integer(BigInt::one()));
+    pub static ref MINUS_ONE: Expr<Number> = Expr::new(Number::Integer(-BigInt::one()));
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -66,7 +66,7 @@ impl Number {
 }
 
 impl Basic for Number {
-    fn visit(&self, visitor: &mut dyn Visitor) -> ControlFlow<()> {
+    fn visit(self: ExprRef<Self>, visitor: &mut dyn Visitor) -> ControlFlow<()> {
         visitor.visit_number(self)
     }
 
@@ -117,22 +117,118 @@ impl ops::Add<&'_ Number> for &'_ Number {
     }
 }
 
-impl ops::Mul<Number> for Number {
+impl ops::Mul<&'_ Number> for Number {
+    type Output = Number;
+
+    fn mul(self, rhs: &Number) -> Self::Output {
+        &self * rhs
+    }
+}
+
+impl ops::Mul<Number> for &'_ Number {
     type Output = Number;
 
     fn mul(self, rhs: Number) -> Self::Output {
+        self * &rhs
+    }
+}
+
+impl ops::Mul<&'_ Number> for &'_ Number {
+    type Output = Number;
+
+    fn mul(self, rhs: &Number) -> Self::Output {
         match (self, rhs) {
             (Number::Infinity(a), Number::Infinity(b)) => if a == b {
                 Number::Infinity(Sign::Plus)
             } else {
                 Number::Infinity(Sign::Minus)
             }
-            (Number::Infinity(sign), _) | (_, Number::Infinity(sign)) => Number::Infinity(sign),
+            (Number::Infinity(sign), _) | (_, Number::Infinity(sign)) => Number::Infinity(*sign),
 
             (Number::Integer(a), Number::Integer(b)) => Number::Integer(a * b),
             (Number::Integer(a), Number::Rational(b))
             | (Number::Rational(b), Number::Integer(a)) => Number::Rational(b * a),
             (Number::Rational(a), Number::Rational(b)) => Number::Rational(a * b)
         }
+    }
+}
+
+
+impl From<u8> for Expr {
+    fn from(n: u8) -> Self {
+        Expr::new(Number::Integer(n.into()))
+    }
+}
+
+impl From<u16> for Expr {
+    fn from(n: u16) -> Self {
+        Expr::new(Number::Integer(n.into()))
+    }
+}
+
+impl From<u32> for Expr {
+    fn from(n: u32) -> Self {
+        Expr::new(Number::Integer(n.into()))
+    }
+}
+
+impl From<u64> for Expr {
+    fn from(n: u64) -> Self {
+        Expr::new(Number::Integer(n.into()))
+    }
+}
+
+impl From<u128> for Expr {
+    fn from(n: u128) -> Self {
+        Expr::new(Number::Integer(n.into()))
+    }
+}
+
+impl From<i8> for Expr {
+    fn from(n: i8) -> Self {
+        Expr::new(Number::Integer(n.into()))
+    }
+}
+
+impl From<i16> for Expr {
+    fn from(n: i16) -> Self {
+        Expr::new(Number::Integer(n.into()))
+    }
+}
+
+impl From<i32> for Expr {
+    fn from(n: i32) -> Self {
+        Expr::new(Number::Integer(n.into()))
+    }
+}
+
+impl From<i64> for Expr {
+    fn from(n: i64) -> Self {
+        Expr::new(Number::Integer(n.into()))
+    }
+}
+
+impl From<i128> for Expr {
+    fn from(n: i128) -> Self {
+        Expr::new(Number::Integer(n.into()))
+    }
+}
+
+impl From<f32> for Expr {
+    fn from(f: f32) -> Self {
+        BigRational::from_float(f)
+            .map(|r| Expr::new(Number::Rational(r)) as Expr)
+            .unwrap_or_else(|| {
+                // the float was not finite
+                if f.is_infinite() {
+                    Expr::new(Number::Infinity(if f.is_sign_negative() {
+                        Sign::Minus
+                    } else {
+                        Sign::Plus
+                    }))
+                } else {
+                    UNDEFINED.clone()
+                }
+            })
     }
 }

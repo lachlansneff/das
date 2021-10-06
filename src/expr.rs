@@ -9,9 +9,14 @@ struct Inner<T: ?Sized> {
     data: T,
 }
 
-pub struct Expr<T: ?Sized + Basic = dyn Basic> {
+pub struct Expr<T: ?Sized = dyn Basic> {
     ptr: NonNull<Inner<T>>,
     _marker: PhantomData<Inner<T>>,
+}
+
+pub struct ExprRef<'a, T: ?Sized = dyn Basic> {
+    ptr: NonNull<Inner<T>>,
+    _marker: PhantomData<&'a Expr<T>>,
 }
 
 impl<T: Basic> Expr<T> {
@@ -26,7 +31,15 @@ impl<T: Basic> Expr<T> {
     }
 }
 
-impl<T: ?Sized + Basic> Expr<T> {
+impl<T: ?Sized> Expr<T> {
+    /// Stands for "ref"
+    pub(crate) fn rf(&self) -> ExprRef<T> {
+        ExprRef {
+            ptr: self.ptr,
+            _marker: PhantomData,
+        }
+    }
+
     #[inline]
     fn inner(&self) -> &Inner<T> {
         unsafe {
@@ -51,8 +64,8 @@ impl<T: ?Sized + Basic> Expr<T> {
 unsafe impl<T: ?Sized + Basic + Send + Sync> Send for Expr<T> {}
 unsafe impl<T: ?Sized + Basic + Send + Sync> Sync for Expr<T> {}
 
-impl<T: ?Sized + Basic + Unsize<U>, U: ?Sized + Basic> CoerceUnsized<Expr<U>> for Expr<T> {}
-impl<T: ?Sized + Basic + Unsize<U>, U: ?Sized + Basic> DispatchFromDyn<Expr<U>> for Expr<T> {}
+impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<Expr<U>> for Expr<T> {}
+impl<T: ?Sized + Unsize<U>, U: ?Sized> DispatchFromDyn<Expr<U>> for Expr<T> {}
 
 
 impl<T: Basic + Clone> Expr<T> {
@@ -78,7 +91,7 @@ impl<T: ?Sized + Basic> Clone for Expr<T> {
     }
 }
 
-impl<T: ?Sized + Basic> Deref for Expr<T> {
+impl<T: ?Sized> Deref for Expr<T> {
     type Target = T;
 
     #[inline]
@@ -87,7 +100,7 @@ impl<T: ?Sized + Basic> Deref for Expr<T> {
     }
 }
 
-impl<T: ?Sized + Basic> Drop for Expr<T> {
+impl<T: ?Sized> Drop for Expr<T> {
     fn drop(&mut self) {
         if self.inner().count.fetch_sub(1, Ordering::Release) != 1 {
             return;
@@ -96,6 +109,12 @@ impl<T: ?Sized + Basic> Drop for Expr<T> {
         atomic::fence(Ordering::Acquire);
 
         unsafe { self.drop_slow() }
+    }
+}
+
+impl<T: Basic> From<Expr<T>> for Expr {
+    fn from(e: Expr<T>) -> Self {
+        e
     }
 }
 
@@ -144,3 +163,41 @@ impl<T: ?Sized + Basic + Debug> Debug for Expr<T> {
         <T as Debug>::fmt(&*self, f)
     }
 }
+
+impl<T: ?Sized> ExprRef<'_, T> {
+    #[inline]
+    fn inner(&self) -> &Inner<T> {
+        unsafe {
+            self.ptr.as_ref()
+        }
+    }
+
+    pub fn into_expr(self) -> Expr<T> {
+        self.inner().count.fetch_add(1, Ordering::Relaxed);
+
+        Expr {
+            ptr: self.ptr,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T: ?Sized> Clone for ExprRef<'_, T> {
+    fn clone(&self) -> Self {
+        Self { ..*self }
+    }
+}
+
+impl<T: ?Sized> Copy for ExprRef<'_, T> {}
+
+impl<T: ?Sized> Deref for ExprRef<'_, T> {
+    type Target = T;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.inner().data
+    }
+}
+
+impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<ExprRef<'a, U>> for ExprRef<'a, T> {}
+impl<'a, T: ?Sized + Unsize<U>, U: ?Sized> DispatchFromDyn<ExprRef<'a, U>> for ExprRef<'a, T> {}

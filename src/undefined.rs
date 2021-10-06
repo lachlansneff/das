@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, ops::ControlFlow};
 
-use crate::{basic::Basic, expr::Expr, visitor::Visitor};
+use crate::{basic::Basic, expr::{Expr, ExprRef}, visitor::Visitor};
 
 lazy_static::lazy_static! {
     pub static ref UNDEFINED: Expr = Expr::new(Undefined);
@@ -10,7 +10,7 @@ lazy_static::lazy_static! {
 pub struct Undefined;
 
 impl Basic for Undefined {
-    fn visit(&self, visitor: &mut dyn Visitor) -> ControlFlow<()> {
+    fn visit(self: ExprRef<Self>, visitor: &mut dyn Visitor) -> ControlFlow<()> {
         visitor.visit_undefined(self)
     }
 

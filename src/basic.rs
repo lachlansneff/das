@@ -1,9 +1,9 @@
-use std::{any::{Any, TypeId}, cmp::Ordering, fmt::Debug, ops::{Add, ControlFlow}};
+use std::{any::{Any, TypeId}, cmp::Ordering, fmt::Debug, ops::{Add, ControlFlow, Mul}};
 
-use crate::{expr::Expr, functions, visitor::Visitor};
+use crate::{expr::{Expr, ExprRef}, functions, visitor::Visitor};
 
 pub trait Basic: Send + Sync + Debug + Any {
-    fn visit(&self, visitor: &mut dyn Visitor) -> ControlFlow<()>;
+    fn visit(self: ExprRef<Self>, visitor: &mut dyn Visitor) -> ControlFlow<()>;
     fn eq(&self, other: &dyn Basic) -> bool;
     /// In implementations of this, return `None` when
     /// the types do not match.
@@ -38,11 +38,61 @@ impl Expr {
     }
 }
 
-impl Add<Expr> for Expr {
+impl<'a> ExprRef<'a> {
+    pub fn downcast_exprref<T: Basic>(self) -> Result<ExprRef<'a, T>, ExprRef<'a>> {
+        if self.is::<T>() {
+            unsafe {
+                Ok(*(&self as *const ExprRef as *const ExprRef<T>))
+            }
+        } else {
+            Err(self)
+        }
+    }
+}
+
+impl<A, B> Add<B> for Expr<A>
+where
+    A: Basic,
+    B: Into<Expr>,
+{
     type Output = Expr;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        functions::plus(&self, &rhs)
+    fn add(self, rhs: B) -> Self::Output {
+        functions::plus((self as Expr).rf(), rhs.into().rf())
+    }
+}
+
+impl<B> Add<B> for Expr
+where
+    B: Into<Expr>,
+{
+    type Output = Expr;
+
+    fn add(self, rhs: B) -> Self::Output {
+        functions::plus(self.rf(), rhs.into().rf())
+    }
+}
+
+impl<A, B> Mul<B> for Expr<A>
+where
+    A: Basic,
+    B: Into<Expr>
+{
+    type Output = Expr;
+
+    fn mul(self, rhs: B) -> Self::Output {
+        functions::times((self as Expr).rf(), rhs.into().rf())
+    }
+}
+
+impl<B> Mul<B> for Expr
+where
+    B: Into<Expr>
+{
+    type Output = Expr;
+
+    fn mul(self, rhs: B) -> Self::Output {
+        functions::times(self.rf(), rhs.into().rf())
     }
 }
 
